@@ -1,21 +1,3 @@
-"""
-Complete Production-Ready WAF Anomaly Detection System
-Naval Hackathon - Final Version
-
-Features:
-- Enhanced feature engineering with security patterns
-- Multiple model comparison (Isolation Forest, One-Class SVM, LOF)
-- Ensemble voting system
-- SHAP explainability
-- Comprehensive visualizations
-- Real-time inference with whitelisting
-- Adaptive threshold mechanism
-"""
-
-# -----------------------------
-# 1. IMPORTS
-# -----------------------------
-
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -53,7 +35,7 @@ sns.set_palette("husl")
 # 2. LOAD DATASET
 # -----------------------------
 
-CSV_PATH = "traffic_logs.csv"
+CSV_PATH = r"C:\Users\uditr\Allproject\waf_anomaly_dataset\waf_http_anomaly_dataset.csv"
 df = pd.read_csv(CSV_PATH)
 
 print("="*70)
@@ -75,7 +57,13 @@ print(f"🔧 FEATURE ENGINEERING")
 print(f"{'─'*70}")
 
 # Convert timestamp
-df['timestamp'] = pd.to_datetime(df['timestamp'])
+#df['timestamp'] = pd.to_datetime(df['timestamp'])
+df['timestamp'] = pd.to_datetime(
+    df['timestamp'],
+    format='mixed',
+    errors='coerce'
+)
+
 
 # TEMPORAL FEATURES
 df['hour'] = df['timestamp'].dt.hour
@@ -113,7 +101,7 @@ df['has_xss'] = df['url'].str.contains(
 ).astype(int)
 
 df['has_path_traversal'] = df['url'].str.contains(
-    r'(\.\.|/etc/|/var/|/proc/|\\\\|%2e%2e)', 
+    r'(\.\.|/etc/|/var/|/proc/|\\\\|%2e%2e)',
     case=False, regex=True
 ).astype(int)
 
@@ -223,10 +211,39 @@ print()
 # 5. FEATURE SCALING
 # -----------------------------
 
+# print(f"⚙️  PREPROCESSING")
+# print(f"{'─'*70}")
+#
+# # Log transform for skewed features
+# SKEWED_COLUMNS = [
+#     "bytes_sent", "req_per_ip_1min", "req_per_ip_10sec",
+#     "time_gap", "url_length", "query_length", "ua_length"
+# ]
+#
+# for col in SKEWED_COLUMNS:
+#     if col in X.columns:
+#         X[col] = np.log1p(X[col])
+#
+# print(f"✓ Applied log transformation to {len([c for c in SKEWED_COLUMNS if c in X.columns])} skewed features")
+#
+# # Standardize all features
+# scaler = StandardScaler()
+# X_scaled = scaler.fit_transform(X)
+# print(f"✓ Standardized all features (mean=0, std=1)")
+# print()
+
+
+# -----------------------------
+# 5. FEATURE SCALING & CLEANING
+# -----------------------------
+
 print(f"⚙️  PREPROCESSING")
 print(f"{'─'*70}")
 
-# Log transform for skewed features
+# 1. Handle Infinite values (can be caused by divisions in feature engineering)
+X.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+# 2. Log transform for skewed features
 SKEWED_COLUMNS = [
     "bytes_sent", "req_per_ip_1min", "req_per_ip_10sec",
     "time_gap", "url_length", "query_length", "ua_length"
@@ -234,11 +251,19 @@ SKEWED_COLUMNS = [
 
 for col in SKEWED_COLUMNS:
     if col in X.columns:
-        X[col] = np.log1p(X[col])
+        # log1p handles log(0+1), but we ensure no negative inputs
+        X[col] = np.log1p(X[col].clip(lower=0))
 
 print(f"✓ Applied log transformation to {len([c for c in SKEWED_COLUMNS if c in X.columns])} skewed features")
 
-# Standardize all features
+# 3. Handle Missing Values (CRITICAL FIX)
+# Fill NaNs with 0 (or use SimpleImputer for mean/median strategy)
+if X.isnull().values.any():
+    nan_count = X.isnull().sum().sum()
+    print(f"⚠️  Found {nan_count} missing values. Filling with 0...")
+    X.fillna(0, inplace=True)
+
+# 4. Standardize all features
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 print(f"✓ Standardized all features (mean=0, std=1)")
